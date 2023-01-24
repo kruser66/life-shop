@@ -1,6 +1,7 @@
 import os
 import shelve
 import logging
+import requests
 from environs import Env
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import Filters, Updater
@@ -13,6 +14,15 @@ from shop_api import (
 logger = logging.getLogger(__name__)
 
 IMAGES = 'images'
+
+
+def download_image(image_url, image_name):
+    response = requests.get(image_url)
+    if response.ok:
+        with open(image_name, 'wb') as file:
+            file.write(response.content)
+
+    return response.ok
 
 
 def start(update, context):
@@ -37,7 +47,7 @@ def product_detail(update, context):
 
     access_token = context.bot_data['access_token']
     product = get_product_by_id(access_token, query.data)
-    image_url = take_product_image_url(access_token, product)
+    image = take_product_image_description(access_token, product)
 
     text = (
         f'{product["name"]}'
@@ -46,11 +56,32 @@ def product_detail(update, context):
         '\n\n'
         f'{product["description"][:200]}...'
     )
-    context.bot.send_photo(
-        chat_id=query.message.chat_id,
-        photo=image_url,
-        caption=text
-    )
+
+    path = os.path.join(IMAGES, image['filename'])
+    print(path)
+
+    if os.path.exists(path):
+        context.bot.send_photo(
+            chat_id=query.message.chat_id,
+            photo=open(path, 'rb'),
+            caption=text
+        )
+    else:
+        file_downloaded = download_image(image['url'], path)
+        if file_downloaded:
+            context.bot.send_photo(
+                chat_id=query.message.chat_id,
+                photo=open(path, 'rb'),
+                caption=text
+            )
+        else:
+            logger.info(f'Не удалось загрузить {image["url"]}')
+            context.bot.send_photo(
+            chat_id=query.message.chat_id,
+            photo=image['url'],
+            caption=text
+        )
+
     context.bot.deleteMessage(
         chat_id=query.message.chat_id,
         message_id=query.message.message_id

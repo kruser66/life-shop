@@ -126,9 +126,10 @@ def take_product_image_description(access_token, product) -> dict:
 
     response = requests.get(url_api, headers=headers)
     response.raise_for_status()
+
     image_description = {
         'url': response.json()['data']['link']['href'],
-        'filename': response.json()['data']['link']['file_name']
+        'filename': response.json()['data']['file_name']
     }
 
     return image_description
@@ -150,7 +151,7 @@ if __name__ == '__main__':
     # pprint(product)
     # pprint(get_product_by_id(access_token, product['id']))
 
-    image_url = take_product_image_url(access_token, product)
+    image_url = take_product_image_description(access_token, product)
     print(image_url)
     # add_item_to_cart(access_token, 'id1234', product)
     #
