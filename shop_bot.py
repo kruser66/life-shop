@@ -7,8 +7,10 @@ from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import Filters, Updater
 from telegram.ext import CallbackQueryHandler, CommandHandler, MessageHandler
 
+
 from shop_api import (
-    fetch_products, get_product_by_id, client_credentials_access_token, take_product_image_description
+    fetch_products, get_product_by_id, client_credentials_access_token, take_product_image_description,
+    add_product_to_cart, get_cart_items, get_cart
 )
 
 logger = logging.getLogger(__name__)
@@ -25,18 +27,38 @@ def download_image(image_url, image_name):
     return response.ok
 
 
-def start(update, context):
-
-    access_token = context.bot_data['access_token']
+def build_main_menu(access_token, chat_id):
     products = fetch_products(access_token)
-
     keyboard = []
     for product in products:
         keyboard.append([InlineKeyboardButton(product['name'], callback_data=product['id'])])
+    items = get_cart_items(access_token, chat_id)
+    if items:
+        keyboard.append([InlineKeyboardButton(f'Корзина ({len(items)})', callback_data='Корзина')])
 
+    return keyboard
+
+def build_product_menu(access_token, chat_id):
+    keyboard = [[]]
+    for amount in range(1,4):
+        keyboard[0].append(InlineKeyboardButton(f'{amount} шт.', callback_data=amount))
+    items = get_cart_items(access_token, chat_id)
+    if items:
+        keyboard.append([InlineKeyboardButton(f'Корзина ({len(items)})', callback_data='Корзина')])
+    keyboard.append([InlineKeyboardButton('Назад', callback_data='Назад')])
+
+    return keyboard
+
+
+def start(update, context):
+
+    access_token = context.bot_data['access_token']
+    chat_id = update.message.chat_id
+
+    keyboard = build_main_menu(access_token, chat_id)
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    update.message.reply_text(text='Please choose:', reply_markup=reply_markup)
+    update.message.reply_text(text='Выберите продукт:', reply_markup=reply_markup)
 
     return 'HANDLE_MENU'
 
@@ -44,10 +66,20 @@ def start(update, context):
 def product_detail(update, context):
 
     query = update.callback_query
+    chat_id = query.message.chat_id
+    context.user_data['product_id'] = query.data
 
     access_token = context.bot_data['access_token']
+
     product = get_product_by_id(access_token, query.data)
     image = take_product_image_description(access_token, product)
+    path = os.path.join(IMAGES, image['filename'])
+
+    if not os.path.exists(path):
+        download_image(image['url'], path)
+
+    keyboard = build_product_menu(access_token, chat_id)
+    reply_markup = InlineKeyboardMarkup(keyboard)
 
     text = (
         f'{product["name"]}'
@@ -55,39 +87,120 @@ def product_detail(update, context):
         f'Price: {product["price"][0]["amount"]} {product["price"][0]["currency"]}'
         '\n\n'
         f'{product["description"][:200]}...'
+        '\n\n'
+        'Заказать:'
     )
 
-    path = os.path.join(IMAGES, image['filename'])
-    print(path)
-
-    if os.path.exists(path):
-        context.bot.send_photo(
-            chat_id=query.message.chat_id,
-            photo=open(path, 'rb'),
-            caption=text
-        )
-    else:
-        file_downloaded = download_image(image['url'], path)
-        if file_downloaded:
-            context.bot.send_photo(
-                chat_id=query.message.chat_id,
-                photo=open(path, 'rb'),
-                caption=text
-            )
-        else:
-            logger.info(f'Не удалось загрузить {image["url"]}')
-            context.bot.send_photo(
-            chat_id=query.message.chat_id,
-            photo=image['url'],
-            caption=text
-        )
+    context.bot.send_photo(
+        chat_id=query.message.chat_id,
+        photo=open(path, 'rb'),
+        caption=text,
+        reply_markup=reply_markup,
+    )
 
     context.bot.deleteMessage(
         chat_id=query.message.chat_id,
         message_id=query.message.message_id
     )
 
-    return 'START'
+    return 'HANDLE_DESCRIPTION'
+
+
+def product_order(update, context):
+
+    access_token = context.bot_data['access_token']
+    product_id = context.user_data['product_id']
+    query = update.callback_query
+    query.answer()
+    chat_id = query.message.chat_id
+
+    if query.data == 'Назад':
+
+        keyboard = build_main_menu(access_token, chat_id)
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        context.bot.deleteMessage(
+            chat_id=query.message.chat_id,
+            message_id=query.message.message_id
+        )
+        context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text='Выберите продукт:',
+            reply_markup=reply_markup
+        )
+
+        return 'HANDLE_MENU'
+
+    else:
+        amount = int(query.data)
+        add_product_to_cart(access_token, chat_id, product_id, amount)
+
+        context.bot.send_message(chat_id=chat_id, text='Товар добавлен в корзину!')
+
+        return 'HANDLE_DESCRIPTION'
+
+
+def show_cart(update, context):
+
+    access_token = context.bot_data['access_token']
+    query = update.callback_query
+    query.answer()
+    chat_id = query.message.chat_id
+
+    if query.data == 'В меню':
+        products = fetch_products(access_token)
+
+        keyboard = []
+        for product in products:
+            keyboard.append([InlineKeyboardButton(product['name'], callback_data=product['id'])])
+        if get_cart_items(access_token, query.message.chat_id):
+            keyboard.append([InlineKeyboardButton('Корзина', callback_data='Корзина')])
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        context.bot.deleteMessage(
+            chat_id=query.message.chat_id,
+            message_id=query.message.message_id
+        )
+
+        context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text='Выберите продукт:',
+            reply_markup=reply_markup
+        )
+        return 'HANDLE_MENU'
+    elif query.data == 'Корзина':
+        pass
+    else:
+        product_id = query.data
+        add_product_to_cart(access_token, chat_id, product_id, -1)
+
+    items = get_cart_items(access_token, chat_id)
+    cart = get_cart(access_token, chat_id)
+
+    text = 'Ваша корзина: \n\n'
+    for item in items:
+        price = item['meta']['display_price']['with_tax']['unit']['formatted']
+        summa = item['meta']['display_price']['with_tax']['value']['formatted']
+        text += f'{item["name"]}\n{item["quantity"]} шт. по цене: {price} на сумму: {summa}\n\n'
+
+    total = cart['meta']['display_price']['with_tax']['formatted']
+    text += f'Общая сумму заказа: {total}'
+
+    keyboard = []
+    for item in items:
+        keyboard.append(
+            [InlineKeyboardButton(f'Убрать из корзины {item["name"]} (-1 шт.)', callback_data=item['product_id'])]
+        )
+    keyboard.append([InlineKeyboardButton('В меню', callback_data='В меню')])
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    context.bot.deleteMessage(
+        chat_id=query.message.chat_id,
+        message_id=query.message.message_id
+    )
+    context.bot.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup)
+
+    return 'SHOW_CART'
 
 
 def handle_users_reply(update, context):
@@ -102,27 +215,26 @@ def handle_users_reply(update, context):
         return
     if user_reply == '/start':
         user_state = 'START'
+    elif user_reply == 'Корзина':
+        user_state = 'SHOW_CART'
     else:
         with shelve.open('state') as db:
             user_state = db[str(chat_id)]
 
     states_functions = {
         'START': start,
-        'HANDLE_MENU': product_detail
+        'HANDLE_MENU': product_detail,
+        'HANDLE_DESCRIPTION': product_order,
+        'SHOW_CART': show_cart
     }
     state_handler = states_functions[user_state]
-    print(state_handler)
-    # Если вы вдруг не заметите, что python-telegram-bot перехватывает ошибки.
-    # Оставляю этот try...except, чтобы код не падал молча.
-    # Этот фрагмент можно переписать.
+
     try:
         next_state = state_handler(update, context)
-
         with shelve.open('state') as db:
             db[str(chat_id)] = next_state
     except Exception as err:
-        print(err)
-
+        logger.error(err)
 
 
 if __name__ == '__main__':

@@ -44,19 +44,6 @@ def client_credentials_access_token(client_id, client_secret):
     return response.json()['access_token']
 
 
-def implicit_access_token(client_id):
-    url_api = 'https://api.moltin.com/oauth/access_token'
-    data = {
-        'client_id': client_id,
-        'grant_type': 'implicit'
-    }
-
-    response = requests.post(url_api, data=data)
-    response.raise_for_status()
-
-    return response.json()['access_token']
-
-
 def get_cart(access_token, cart_id):
     url_api = f'https://api.moltin.com/v2/carts/{cart_id}'
 
@@ -68,7 +55,7 @@ def get_cart(access_token, cart_id):
     response = requests.get(url_api, headers=headers)
     response.raise_for_status()
 
-    return response.json()
+    return response.json()['data']
 
 
 def delete_cart(access_token, cart_id):
@@ -84,8 +71,20 @@ def delete_cart(access_token, cart_id):
     return response
 
 
-def add_item_to_cart(access_token, card_id, product):
+def add_product_to_cart(access_token, card_id, product_id, amount=1):
 
+    items = get_cart_items(access_token, card_id)
+    item = [item for item in items if item['product_id'] == product_id]
+
+    if item:
+        response = update_item_to_cart(access_token, card_id, product_id, item[0], amount)
+    else:
+        response = add_item_to_cart(access_token, card_id, product_id, amount)
+
+    return response
+
+
+def add_item_to_cart(access_token, card_id, product_id, amount):
     url = f'https://api.moltin.com/v2/carts/{card_id}/items'
     headers = {
         'Authorization': f'Bearer {access_token}',
@@ -93,13 +92,30 @@ def add_item_to_cart(access_token, card_id, product):
     }
     params = {
         'data': {
-            'id': product['id'],
+            'id': product_id,
             'type': 'cart_item',
-            'quantity': 1,
+            'quantity': amount,
         }
     }
     response = requests.post(url, headers=headers, data=json.dumps(params))
-    # response.raise_for_status()
+    return response.json()
+
+
+def update_item_to_cart(access_token, card_id, product_id, item, amount):
+
+    url = f'https://api.moltin.com/v2/carts/{card_id}/items/{item["id"]}'
+    headers = {
+        'Authorization': f'Bearer {access_token}',
+        'Content-Type': 'application/json',
+    }
+    params = {
+        'data': {
+            'id': product_id,
+            'type': 'cart_item',
+            'quantity': item['quantity'] + amount,
+        }
+    }
+    response = requests.put(url, headers=headers, data=json.dumps(params))
     return response.json()
 
 
@@ -111,8 +127,9 @@ def get_cart_items(access_token, card_id):
         'Content-Type': 'application/json',
     }
     response = requests.get(url, headers=headers)
-    # response.raise_for_status()
-    return response.json()
+    response.raise_for_status()
+
+    return response.json()['data']
 
 
 def take_product_image_description(access_token, product) -> dict:
@@ -144,16 +161,9 @@ if __name__ == '__main__':
     client_secret = env.str('MOTLIN_CLIENT_SECRET')
 
     access_token = client_credentials_access_token(client_id, client_secret)
-    # print(access_token)
 
     products = fetch_products(access_token)
     product = choice(products)
-    # pprint(product)
-    # pprint(get_product_by_id(access_token, product['id']))
-
-    image_url = take_product_image_description(access_token, product)
-    print(image_url)
-    # add_item_to_cart(access_token, 'id1234', product)
-    #
-    # items = get_cart_items(access_token, 'id1234')
-    # pprint(items)
+    add_product_to_cart(access_token, 123567, product)
+    pprint(get_cart(access_token, 123567))
+    delete_cart(access_token, 123567)
