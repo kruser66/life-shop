@@ -8,6 +8,20 @@ from random import choice
 API_BASE_URL='https://api.moltin.com/v2'
 
 
+def client_credentials_access_token(client_id, client_secret):
+    url_api = 'https://api.moltin.com/oauth/access_token'
+    data = {
+        'client_id': client_id,
+        'client_secret': client_secret,
+        'grant_type': 'client_credentials'
+    }
+
+    response = requests.post(url_api, data=data)
+    response.raise_for_status()
+
+    return response.json()['access_token']
+
+
 def fetch_products(access_token):
     url = 'https://api.moltin.com/v2/products'
     headers = {
@@ -30,18 +44,24 @@ def get_product_by_id(access_token, product_id):
     return products.json()['data']
 
 
-def client_credentials_access_token(client_id, client_secret):
-    url_api = 'https://api.moltin.com/oauth/access_token'
-    data = {
-        'client_id': client_id,
-        'client_secret': client_secret,
-        'grant_type': 'client_credentials'
+def take_product_image_description(access_token, product) -> dict:
+
+    file_id = product['relationships']['main_image']['data']['id']
+    url_api = f'https://api.moltin.com/v2/files/{file_id}'
+
+    headers = {
+        'Authorization': f'Bearer {access_token}',
     }
 
-    response = requests.post(url_api, data=data)
+    response = requests.get(url_api, headers=headers)
     response.raise_for_status()
 
-    return response.json()['access_token']
+    image_description = {
+        'url': response.json()['data']['link']['href'],
+        'filename': response.json()['data']['file_name']
+    }
+
+    return image_description
 
 
 def get_cart(access_token, cart_id):
@@ -66,7 +86,7 @@ def delete_cart(access_token, cart_id):
     }
 
     response = requests.delete(url_api, headers=headers)
-    # response.raise_for_status()
+    response.raise_for_status()
 
     return response
 
@@ -143,25 +163,37 @@ def get_cart_items(access_token, card_id):
     return response.json()['data']
 
 
-def take_product_image_description(access_token, product) -> dict:
 
-    file_id = product['relationships']['main_image']['data']['id']
-    url_api = f'https://api.moltin.com/v2/files/{file_id}'
+def get_customers(access_token):
+    url_api = 'https://api.moltin.com/v2/customers'
 
     headers = {
         'Authorization': f'Bearer {access_token}',
+        'Content-Type': 'application/json',
     }
 
     response = requests.get(url_api, headers=headers)
     response.raise_for_status()
 
-    image_description = {
-        'url': response.json()['data']['link']['href'],
-        'filename': response.json()['data']['file_name']
+    return response.json()['data']
+
+def add_customer(access_token, user):
+    url = f'https://api.moltin.com/v2/customers'
+    headers = {
+        'Authorization': f'Bearer {access_token}',
+        'Content-Type': 'application/json',
     }
+    params = {
+        'data': {
+            'type': 'customer',
+        }
+    }
+    params['data'].update(user)
 
-    return image_description
+    response = requests.post(url, headers=headers, data=json.dumps(params))
+    response.raise_for_status()
 
+    return response.json()
 
 if __name__ == '__main__':
 
@@ -172,7 +204,8 @@ if __name__ == '__main__':
     client_secret = env.str('MOTLIN_CLIENT_SECRET')
 
     access_token = client_credentials_access_token(client_id, client_secret)
-
+    pprint(get_customers(access_token))
+    exit()
     products = fetch_products(access_token)
     product = choice(products)
     add_product_to_cart(access_token, 123567, product)

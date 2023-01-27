@@ -11,7 +11,7 @@ from telegram.ext import CallbackQueryHandler, CommandHandler, MessageHandler
 
 from shop_api import (
     fetch_products, get_product_by_id, client_credentials_access_token, take_product_image_description,
-    add_product_to_cart, delete_item_from_cart, get_cart_items, get_cart
+    add_product_to_cart, delete_item_from_cart, get_cart_items, get_cart, add_customer
 )
 
 logger = logging.getLogger(__name__)
@@ -66,13 +66,14 @@ def start(update, context):
 
 def product_detail(update, context):
 
-    query = update.callback_query
-    chat_id = query.message.chat_id
-    
-    context.user_data['product_id'] = query.data
     access_token = context.bot_data['access_token']
 
-    product = get_product_by_id(access_token, query.data)
+    query = update.callback_query
+    chat_id = query.message.chat_id
+    product_id = query.data
+    context.user_data['product_id'] = product_id
+
+    product = get_product_by_id(access_token, product_id)
     image = take_product_image_description(access_token, product)
     path = os.path.join(IMAGES, image['filename'])
 
@@ -114,6 +115,7 @@ def product_order(update, context):
     query = update.callback_query
     query.answer()
     chat_id = query.message.chat_id
+    message_id = query.message.message_id
 
     if query.data == 'Назад':
 
@@ -121,11 +123,11 @@ def product_order(update, context):
         reply_markup = InlineKeyboardMarkup(keyboard)
 
         context.bot.deleteMessage(
-            chat_id=query.message.chat_id,
-            message_id=query.message.message_id
+            chat_id=chat_id,
+            message_id=message_id
         )
         context.bot.send_message(
-            chat_id=query.message.chat_id,
+            chat_id=chat_id,
             text='Выберите продукт:',
             reply_markup=reply_markup
         )
@@ -136,7 +138,13 @@ def product_order(update, context):
         amount = int(query.data)
         add_product_to_cart(access_token, chat_id, product_id, amount)
 
-        context.bot.send_message(chat_id=chat_id, text='Товар добавлен в корзину!')
+        keyboard = build_product_menu(access_token, chat_id)
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        context.bot.edit_message_caption(
+            chat_id=chat_id, message_id=message_id,
+            caption=f'Товар добавлен в корзину!\n\n {query.message.caption}',
+            reply_markup=reply_markup)
 
         return 'HANDLE_DESCRIPTION'
 
@@ -207,7 +215,7 @@ def start_payment(update, context):
     elif update.callback_query:
         chat_id = update.callback_query.message.chat_id
 
-    context.bot.send_message(text='Введите Ваш адрес электронной почты:', chat_id=chat_id)
+    context.bot.send_message(chat_id=chat_id, text='Введите Ваш адрес электронной почты:', )
 
     return 'WAITING_EMAIL'
 
@@ -218,6 +226,11 @@ def echo_email(update, context):
 
     if validate(email_address=email, check_format=True, check_blacklist=False, check_dns=False):
         update.message.reply_text(text=f'Вы ввели адрес: {email}')
+        user = {
+            'name': str(update.message.chat_id),
+            'email': email
+        }
+        add_customer(access_token, user)
         return 'PAYMENT'
     else:
         update.message.reply_text(text=f'Адрес: {email} некорректный. Повторите ввод!')
