@@ -119,6 +119,17 @@ def update_item_to_cart(access_token, card_id, product_id, item, amount):
     return response.json()
 
 
+def delete_item_from_cart(access_token, card_id, item_id):
+
+    url = f'https://api.moltin.com/v2/carts/{card_id}/items/{item_id}'
+    headers = {
+        'Authorization': f'Bearer {access_token}',
+        'Content-Type': 'application/json',
+    }
+    response = requests.delete(url, headers=headers)
+    return response.json()
+
+
 def get_cart_items(access_token, card_id):
 
     url = f'https://api.moltin.com/v2/carts/{card_id}/items'
