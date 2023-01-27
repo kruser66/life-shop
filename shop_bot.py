@@ -3,6 +3,7 @@ import shelve
 import logging
 import requests
 from environs import Env
+from email_validate import validate
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import Filters, Updater
 from telegram.ext import CallbackQueryHandler, CommandHandler, MessageHandler
@@ -10,7 +11,7 @@ from telegram.ext import CallbackQueryHandler, CommandHandler, MessageHandler
 
 from shop_api import (
     fetch_products, get_product_by_id, client_credentials_access_token, take_product_image_description,
-    add_product_to_cart, get_cart_items, get_cart
+    add_product_to_cart, delete_item_from_cart, get_cart_items, get_cart
 )
 
 logger = logging.getLogger(__name__)
@@ -67,8 +68,8 @@ def product_detail(update, context):
 
     query = update.callback_query
     chat_id = query.message.chat_id
+    
     context.user_data['product_id'] = query.data
-
     access_token = context.bot_data['access_token']
 
     product = get_product_by_id(access_token, query.data)
@@ -148,13 +149,7 @@ def show_cart(update, context):
     chat_id = query.message.chat_id
 
     if query.data == 'В меню':
-        products = fetch_products(access_token)
-
-        keyboard = []
-        for product in products:
-            keyboard.append([InlineKeyboardButton(product['name'], callback_data=product['id'])])
-        if get_cart_items(access_token, query.message.chat_id):
-            keyboard.append([InlineKeyboardButton('Корзина', callback_data='Корзина')])
+        keyboard = build_main_menu(access_token, chat_id)
         reply_markup = InlineKeyboardMarkup(keyboard)
 
         context.bot.deleteMessage(
@@ -171,8 +166,8 @@ def show_cart(update, context):
     elif query.data == 'Корзина':
         pass
     else:
-        product_id = query.data
-        add_product_to_cart(access_token, chat_id, product_id, -1)
+        item_id = query.data
+        delete_item_from_cart(access_token, chat_id, item_id)
 
     items = get_cart_items(access_token, chat_id)
     cart = get_cart(access_token, chat_id)
@@ -187,9 +182,11 @@ def show_cart(update, context):
     text += f'Общая сумму заказа: {total}'
 
     keyboard = []
+    if items:
+        keyboard.append([InlineKeyboardButton('Оплатить', callback_data='Оплатить')])
     for item in items:
         keyboard.append(
-            [InlineKeyboardButton(f'Убрать из корзины {item["name"]} (-1 шт.)', callback_data=item['product_id'])]
+            [InlineKeyboardButton(f'Убрать из корзины {item["name"]}', callback_data=item['id'])]
         )
     keyboard.append([InlineKeyboardButton('В меню', callback_data='В меню')])
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -200,7 +197,31 @@ def show_cart(update, context):
     )
     context.bot.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup)
 
-    return 'SHOW_CART'
+    return 'HANDLE_CART'
+
+
+def start_payment(update, context):
+
+    if update.message:
+        chat_id = update.message.chat_id
+    elif update.callback_query:
+        chat_id = update.callback_query.message.chat_id
+
+    context.bot.send_message(text='Введите Ваш адрес электронной почты:', chat_id=chat_id)
+
+    return 'WAITING_EMAIL'
+
+
+def echo_email(update, context):
+    email = update.message.text
+    access_token = context.bot_data['access_token']
+
+    if validate(email_address=email, check_format=True, check_blacklist=False, check_dns=False):
+        update.message.reply_text(text=f'Вы ввели адрес: {email}')
+        return 'PAYMENT'
+    else:
+        update.message.reply_text(text=f'Адрес: {email} некорректный. Повторите ввод!')
+        return 'WAITING_EMAIL'
 
 
 def handle_users_reply(update, context):
@@ -216,7 +237,9 @@ def handle_users_reply(update, context):
     if user_reply == '/start':
         user_state = 'START'
     elif user_reply == 'Корзина':
-        user_state = 'SHOW_CART'
+        user_state = 'HANDLE_CART'
+    elif user_reply == 'Оплатить':
+        user_state = 'START_PAYMENT'
     else:
         with shelve.open('state') as db:
             user_state = db[str(chat_id)]
@@ -225,7 +248,9 @@ def handle_users_reply(update, context):
         'START': start,
         'HANDLE_MENU': product_detail,
         'HANDLE_DESCRIPTION': product_order,
-        'SHOW_CART': show_cart
+        'HANDLE_CART': show_cart,
+        'START_PAYMENT': start_payment,
+        'WAITING_EMAIL': echo_email
     }
     state_handler = states_functions[user_state]
 
