@@ -1,10 +1,8 @@
-import os
 import json
 import requests
 from environs import Env
 from pprint import pprint
 from random import choice
-from datetime import datetime
 
 API_BASE_URL='https://api.moltin.com/v2'
 
@@ -20,7 +18,7 @@ def client_credentials_access_token(client_id, client_secret):
     response = requests.post(url_api, data=data)
     response.raise_for_status()
 
-    return response.json()#['access_token']
+    return response.json()
 
 
 def fetch_products(access_token):
@@ -57,9 +55,11 @@ def take_product_image_description(access_token, product) -> dict:
     response = requests.get(url_api, headers=headers)
     response.raise_for_status()
 
+    response_image = response.json()['data']
+
     image_description = {
-        'url': response.json()['data']['link']['href'],
-        'filename': response.json()['data']['file_name']
+        'url': response_image['link']['href'],
+        'filename': response_image['file_name']
     }
 
     return image_description
@@ -164,7 +164,6 @@ def get_cart_items(access_token, card_id):
     return response.json()['data']
 
 
-
 def get_customers(access_token):
     url_api = 'https://api.moltin.com/v2/customers'
 
@@ -205,11 +204,7 @@ if __name__ == '__main__':
     client_secret = env.str('MOTLIN_CLIENT_SECRET')
 
     access_token = client_credentials_access_token(client_id, client_secret)
-    pprint(access_token)
-    pprint(datetime.timestamp(datetime.now()))
-    exit()
     pprint(get_customers(access_token))
-    exit()
     products = fetch_products(access_token)
     product = choice(products)
     add_product_to_cart(access_token, 123567, product)

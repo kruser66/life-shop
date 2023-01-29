@@ -2,6 +2,7 @@ import os
 import shelve
 import logging
 import requests
+from textwrap import dedent
 from datetime import datetime
 from environs import Env
 from email_validate import validate
@@ -29,8 +30,7 @@ def download_image(image_url, image_name):
     return response.ok
 
 
-def build_main_menu(access_token, chat_id):
-    products = fetch_products(access_token)
+def build_main_menu(access_token, chat_id, products):
     keyboard = []
     for product in products:
         keyboard.append([InlineKeyboardButton(product['name'], callback_data=product['id'])])
@@ -58,7 +58,8 @@ def start(update, context):
 
     chat_id = update.message.chat_id
 
-    keyboard = build_main_menu(access_token, chat_id)
+    products = fetch_products(access_token)
+    keyboard = build_main_menu(access_token, chat_id, products)
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     update.message.reply_text(text='Выберите продукт:', reply_markup=reply_markup)
@@ -85,20 +86,20 @@ def product_detail(update, context):
     keyboard = build_product_menu(access_token, chat_id)
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    text = (
-        f'{product["name"]}'
-        '\n\n'
-        f'Price: {product["price"][0]["amount"]} {product["price"][0]["currency"]}'
-        '\n\n'
-        f'{product["description"][:200]}...'
-        '\n\n'
-        'Заказать:'
-    )
+    text = f'''\
+        {product['name']}
+        
+        Price: {product['price'][0]['amount']} {product['price'][0]['currency']}
+        
+        {product['description'][:200]}...
+        
+        Заказать:
+    '''
 
     context.bot.send_photo(
         chat_id=query.message.chat_id,
         photo=open(path, 'rb'),
-        caption=text,
+        caption=dedent(text),
         reply_markup=reply_markup,
     )
 
@@ -121,17 +122,18 @@ def product_order(update, context):
 
     if query.data == 'Назад':
 
-        keyboard = build_main_menu(access_token, chat_id)
+        products = fetch_products(access_token)
+        keyboard = build_main_menu(access_token, chat_id, products)
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        context.bot.deleteMessage(
-            chat_id=chat_id,
-            message_id=message_id
-        )
         context.bot.send_message(
             chat_id=chat_id,
             text='Выберите продукт:',
             reply_markup=reply_markup
+        )
+        context.bot.delete_message(
+            chat_id=chat_id,
+            message_id=message_id
         )
 
         return 'HANDLE_MENU'
@@ -159,20 +161,23 @@ def show_cart(update, context):
     chat_id = query.message.chat_id
 
     if query.data == 'В меню':
-        keyboard = build_main_menu(access_token, chat_id)
-        reply_markup = InlineKeyboardMarkup(keyboard)
 
-        context.bot.deleteMessage(
-            chat_id=query.message.chat_id,
-            message_id=query.message.message_id
-        )
+        products = fetch_products(access_token)
+        keyboard = build_main_menu(access_token, chat_id, products)
+        reply_markup = InlineKeyboardMarkup(keyboard)
 
         context.bot.send_message(
             chat_id=query.message.chat_id,
             text='Выберите продукт:',
             reply_markup=reply_markup
         )
+        context.bot.delete_message(
+            chat_id=query.message.chat_id,
+            message_id=query.message.message_id
+        )
+
         return 'HANDLE_MENU'
+
     elif query.data == 'Корзина':
         pass
     else:
