@@ -4,6 +4,7 @@ import requests
 from environs import Env
 from pprint import pprint
 from random import choice
+from datetime import datetime
 
 API_BASE_URL='https://api.moltin.com/v2'
 
@@ -19,7 +20,7 @@ def client_credentials_access_token(client_id, client_secret):
     response = requests.post(url_api, data=data)
     response.raise_for_status()
 
-    return response.json()['access_token']
+    return response.json()#['access_token']
 
 
 def fetch_products(access_token):
@@ -204,6 +205,9 @@ if __name__ == '__main__':
     client_secret = env.str('MOTLIN_CLIENT_SECRET')
 
     access_token = client_credentials_access_token(client_id, client_secret)
+    pprint(access_token)
+    pprint(datetime.timestamp(datetime.now()))
+    exit()
     pprint(get_customers(access_token))
     exit()
     products = fetch_products(access_token)

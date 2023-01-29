@@ -2,6 +2,7 @@ import os
 import shelve
 import logging
 import requests
+from datetime import datetime
 from environs import Env
 from email_validate import validate
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
@@ -53,7 +54,8 @@ def build_product_menu(access_token, chat_id):
 
 def start(update, context):
 
-    access_token = context.bot_data['access_token']
+    access_token = update_token(context)
+
     chat_id = update.message.chat_id
 
     keyboard = build_main_menu(access_token, chat_id)
@@ -66,7 +68,7 @@ def start(update, context):
 
 def product_detail(update, context):
 
-    access_token = context.bot_data['access_token']
+    access_token = update_token(context)
 
     query = update.callback_query
     chat_id = query.message.chat_id
@@ -110,7 +112,7 @@ def product_detail(update, context):
 
 def product_order(update, context):
 
-    access_token = context.bot_data['access_token']
+    access_token = update_token(context)
     product_id = context.user_data['product_id']
     query = update.callback_query
     query.answer()
@@ -151,7 +153,7 @@ def product_order(update, context):
 
 def show_cart(update, context):
 
-    access_token = context.bot_data['access_token']
+    access_token = update_token(context)
     query = update.callback_query
     query.answer()
     chat_id = query.message.chat_id
@@ -222,7 +224,7 @@ def start_payment(update, context):
 
 def echo_email(update, context):
     email = update.message.text
-    access_token = context.bot_data['access_token']
+    access_token = update_token(context)
 
     if validate(email_address=email, check_format=True, check_blacklist=False, check_dns=False):
         update.message.reply_text(text=f'Вы ввели адрес: {email}')
@@ -275,6 +277,17 @@ def handle_users_reply(update, context):
         logger.error(err)
 
 
+def update_token(context):
+    token = context.bot_data['token']
+    now = datetime.timestamp(datetime.now())
+
+    if now > token['expires']:
+        token = client_credentials_access_token(context.bot_data['client_id'], context.bot_data['client_secret'])
+        context.bot_data['token'] = token
+
+    return token['access_token']
+
+
 if __name__ == '__main__':
 
     os.makedirs(IMAGES, exist_ok=True)
@@ -292,14 +305,16 @@ if __name__ == '__main__':
     # Получение токена для работы с интернет-магазином
     client_id = env.str('MOTLIN_CLIENT_ID')
     client_secret = env.str('MOTLIN_CLIENT_SECRET')
-    access_token = client_credentials_access_token(client_id, client_secret)
+    motlin_token = client_credentials_access_token(client_id, client_secret)
 
     token = env.str('TG_TOKEN')
     updater = Updater(token=token, use_context=True)
     dispatcher = updater.dispatcher
 
     dispatcher.bot_data = {
-        'access_token': access_token
+        'token': motlin_token,
+        'client_id': client_id,
+        'client_secret': client_secret
     }
 
     dispatcher.add_handler(CallbackQueryHandler(handle_users_reply))
