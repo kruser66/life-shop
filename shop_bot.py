@@ -103,7 +103,7 @@ def product_detail(update, context):
         reply_markup=reply_markup,
     )
 
-    context.bot.deleteMessage(
+    context.bot.delete_message(
         chat_id=query.message.chat_id,
         message_id=query.message.message_id
     )
@@ -206,11 +206,12 @@ def show_cart(update, context):
     keyboard.append([InlineKeyboardButton('В меню', callback_data='В меню')])
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    context.bot.deleteMessage(
+    context.bot.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup)
+
+    context.bot.delete_message(
         chat_id=query.message.chat_id,
         message_id=query.message.message_id
     )
-    context.bot.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup)
 
     return 'HANDLE_CART'
 
